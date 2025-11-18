@@ -1,2 +1,21 @@
-# Placeholder symbols configuration.
-symbols: []
+# Symbol universe and per-symbol limits.
+symbols:
+  - symbol: BTCUSDT
+    group: core
+    enabled: true
+    max_leverage: 5
+    max_notional_usdt: 100000
+  - symbol: ETHUSDT
+    group: core
+    max_leverage: 5
+    max_notional_usdt: 60000
+  - symbol: SOLUSDT
+    group: core
+  - symbol: XRPUSDT
+    group: plus
+    max_notional_usdt: 30000
+  - symbol: DOGEUSDT
+    group: plus
+  - symbol: ARBUSDT
+    group: rotation
+    enabled: false
