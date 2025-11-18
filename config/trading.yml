@@ -1,0 +1,7 @@
+# Placeholder trading configuration for the intraday bot.
+# Fill in with actual values according to TZ.txt before running the bot.
+bybit_mode: demo
+update_interval_sec: 15
+virtual_equity_usdt: 10000
+per_trade_risk_pct: 0.5
+max_concurrent_positions: 3
