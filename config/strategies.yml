@@ -1,2 +1,24 @@
-# Placeholder strategy configuration section.
-strategies: []
+# Enabled strategies and runtime parameters.
+strategies:
+  - id: strategy_a
+    name: Trend Continuation
+    enabled: true
+    priority: 1
+    parameters:
+      min_regime: Trend
+      atr_multiple: 2.5
+      add_on_breakout: true
+  - id: strategy_b
+    name: BB Squeeze
+    enabled: true
+    priority: 2
+    parameters:
+      squeeze_length: 20
+      breakout_confirm_tf: 5m
+  - id: strategy_c
+    name: Range Break
+    enabled: false
+    priority: 3
+    parameters:
+      lookback_bars: 30
+      retest_tolerance_bps: 5
