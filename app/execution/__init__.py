@@ -1,8 +1,28 @@
-"""Order execution subsystem package.
+"""Order execution subsystem package."""
 
-Modules created here will convert intents into Bybit REST/WebSocket calls,
-monitor order states, and ensure execution data flows back into risk,
-strategies and telemetry subsystems.
-"""
+from .execution_engine import ExecutionEngine, OrderGateway
+from .models import (
+    ActiveOrder,
+    EntryIntent,
+    EntryIntentStatus,
+    ExecutionEventType,
+    ExecutionReport,
+    OrderIntent,
+    OrderStatus,
+)
+from .sync_state import hydrate_execution_engine, snapshot_to_position, sync_state_from_exchange
 
-__all__: list[str] = []
+__all__ = [
+    "ExecutionEngine",
+    "OrderGateway",
+    "EntryIntent",
+    "EntryIntentStatus",
+    "OrderIntent",
+    "OrderStatus",
+    "ActiveOrder",
+    "ExecutionEventType",
+    "ExecutionReport",
+    "hydrate_execution_engine",
+    "snapshot_to_position",
+    "sync_state_from_exchange",
+]
