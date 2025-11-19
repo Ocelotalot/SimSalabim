@@ -51,6 +51,7 @@ class TelegramBotInterface:
         runtime_store: RuntimeStateStore,
         status_provider: StatusProvider,
         logger: logging.Logger | None = None,
+        state_lock: threading.Lock | None = None,
     ) -> None:
         self._bot = Bot(token=token)
         self._updater = Updater(bot=self._bot, use_context=True)
@@ -59,7 +60,7 @@ class TelegramBotInterface:
         self._runtime_store = runtime_store
         self._status_provider = status_provider
         self._logger = logger or LOGGER
-        self._lock = threading.Lock()
+        self._lock = state_lock or threading.Lock()
         self._running = False
         self._register_handlers()
 
