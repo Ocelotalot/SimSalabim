@@ -301,6 +301,7 @@ class ExecutionEngine:
             order_type=OrderType.MARKET,
             quantity=intent.size,
             time_in_force=TimeInForce.FOK,
+            client_order_id=intent.intent_id,
             comment="market_with_cap",
         )
         self._submit_order(intent, order)
@@ -354,6 +355,7 @@ class ExecutionEngine:
                 price=intent.entry_price,
                 time_in_force=TimeInForce.GTC,
                 post_only=True,
+                client_order_id=intent.intent_id,
                 comment="limit_on_retest",
             )
             self._submit_order(intent, order)

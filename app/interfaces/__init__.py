@@ -1,8 +1,5 @@
-"""External user interfaces package.
+"""External user interfaces package."""
 
-This namespace will contain the Telegram bot (and potential future UIs) that let
-operators control the bot lifecycle and inspect telemetry without touching the
-core process directly.
-"""
+from .telegram_bot import StatusProvider, StatusSnapshot, TelegramBotInterface
 
-__all__: list[str] = []
+__all__ = ["TelegramBotInterface", "StatusSnapshot", "StatusProvider"]
