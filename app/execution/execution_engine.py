@@ -123,13 +123,18 @@ class ExecutionEngine:
             reports.append(self._open_position_from_fill(intent, order.avg_fill_price, order.filled_qty, now))
             self.entry_intents.pop(intent.intent_id, None)
         elif order.status == OrderStatus.CANCELLED:
+            filled_qty = max(order.filled_qty or 0.0, 0.0)
+            remaining_qty = max(float(intent.size) - filled_qty, 0.0)
+            if filled_qty > 0:
+                avg_price = order.avg_fill_price or float(intent.entry_price)
+                reports.append(self._open_position_from_fill(intent, avg_price, filled_qty, now))
             intent.status = EntryIntentStatus.CANCELLED
             reports.append(
                 ExecutionReport(
                     event=ExecutionEventType.ENTRY_CANCELLED,
                     symbol=intent.symbol,
                     side=intent.side,
-                    quantity=float(intent.size),
+                    quantity=remaining_qty,
                     price=float(intent.entry_price),
                     timestamp=now,
                     intent_id=intent.intent_id,
@@ -265,11 +270,11 @@ class ExecutionEngine:
         qty = position.reduce(min(1.0, fraction))
         pnl = self._calc_pnl(position.side, float(position.entry_price), price, qty)
         position.realized_pnl += pnl
+        if self.pnl_callback and abs(pnl) > 0.0:
+            self.pnl_callback(pnl, now)
         if position.remaining_size() <= 1e-8:
             final_pnl = position.realized_pnl
             self.positions.pop(position.symbol, None)
-            if self.pnl_callback:
-                self.pnl_callback(final_pnl, now)
         return ExecutionReport(
             event=event,
             symbol=position.symbol,
