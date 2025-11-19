@@ -4,6 +4,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -184,6 +185,7 @@ def main() -> None:
     logger.info("Bootstrapping bot", extra={"mode": config.trading.bybit.mode.value})
 
     runtime_store = RuntimeStateStore(runtime_dir)
+    runtime_lock = threading.Lock()
     runtime_state = _load_runtime_state(runtime_store, config.trading.risk)
     risk_limits = _build_risk_limits(config, runtime_state)
     strategies = build_active_strategies(config.strategies)
@@ -199,8 +201,9 @@ def main() -> None:
     def handle_realized_pnl(pnl: float, when: datetime) -> None:
         nonlocal runtime_state
         risk_engine.record_trade_pnl(pnl, when)
-        runtime_state.daily_pnl_usdt += pnl
-        runtime_state = runtime_store.update_state(daily_pnl_usdt=runtime_state.daily_pnl_usdt)
+        with runtime_lock:
+            runtime_state.daily_pnl_usdt += pnl
+            runtime_state = runtime_store.update_state(daily_pnl_usdt=runtime_state.daily_pnl_usdt)
 
     gateway = PaperOrderGateway(market_service.last_price, logger.getChild("paper_gateway"))
     execution_engine = ExecutionEngine(
@@ -223,6 +226,7 @@ def main() -> None:
         runtime_store=runtime_store,
         status_provider=status_provider,
         logger=logger.getChild("telegram"),
+        state_lock=runtime_lock,
     )
     telegram_bot.start()
     telegram_bot.notify_text(
