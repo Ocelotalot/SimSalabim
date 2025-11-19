@@ -38,3 +38,10 @@ def test_runtime_state_store_should_validate_fields(tmp_path) -> None:
     store = RuntimeStateStore(tmp_path)
     with pytest.raises(Exception):
         store.update_state(unknown_field=123)
+
+
+def test_runtime_state_store_should_initialize_missing_file(tmp_path) -> None:
+    store = RuntimeStateStore(tmp_path)
+    state = store.load_state()
+    assert store.runtime_state_path.exists()
+    assert state.bot_running is False

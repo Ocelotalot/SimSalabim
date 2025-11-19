@@ -9,7 +9,12 @@ from app.telemetry.storage import TelemetryStorage
 
 
 def test_telemetry_storage_should_write_event_trade_and_stats(telemetry_tmpdir) -> None:
-    storage = TelemetryStorage(logs_dir=telemetry_tmpdir / "logs", reports_dir=telemetry_tmpdir / "reports")
+    runtime_stats_path = telemetry_tmpdir / "runtime" / "session_stats.json"
+    storage = TelemetryStorage(
+        logs_dir=telemetry_tmpdir / "logs",
+        reports_dir=telemetry_tmpdir / "reports",
+        runtime_session_stats_path=runtime_stats_path,
+    )
     event = TelemetryEvent(
         timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
         event_type="risk",
@@ -42,3 +47,5 @@ def test_telemetry_storage_should_write_event_trade_and_stats(telemetry_tmpdir) 
     saved = json.loads(stats_path.read_text(encoding="utf-8"))
     assert saved["trades_count"] == 1
     assert saved["gross_pnl_usdt"] == 10.0
+    runtime_saved = json.loads(runtime_stats_path.read_text(encoding="utf-8"))
+    assert runtime_saved["net_pnl_usdt"] == saved["net_pnl_usdt"]

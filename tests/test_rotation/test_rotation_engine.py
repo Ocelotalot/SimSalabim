@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -53,3 +53,38 @@ def test_rotation_engine_should_raise_when_no_market_state(market_state_factory,
     engine = RotationEngine(config, symbol_configs)
     with pytest.raises(Exception):
         engine.update({}, now=datetime(2024, 1, 1, tzinfo=timezone.utc))
+
+
+def test_rotation_engine_should_normalize_per_symbol_history(market_state_factory) -> None:
+    configs = [
+        _symbol("BTCUSDT", SymbolGroup.CORE),
+        _symbol("SOLUSDT", SymbolGroup.PLUS),
+    ]
+    config = RotationConfig(enabled=True, check_interval_min=1, min_score_for_new_entry=0.5, max_active_symbols=2)
+    engine = RotationEngine(config, configs)
+    now = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base_states = {
+        "BTCUSDT": _state(market_state_factory, depth_pm1_usd=8_000_000, spread_bps=3.0, rel_volume_5m=1.2, oi_delta_5m=15_000),
+        "SOLUSDT": _state(market_state_factory, depth_pm1_usd=1_000_000, spread_bps=5.0, rel_volume_5m=1.1, oi_delta_5m=5_000),
+    }
+    engine.update(base_states, now=now)
+
+    second_states = {
+        "BTCUSDT": _state(
+            market_state_factory,
+            depth_pm1_usd=12_000_000,
+            spread_bps=2.0,
+            rel_volume_5m=1.4,
+            oi_delta_5m=20_000,
+        ),
+        "SOLUSDT": _state(
+            market_state_factory,
+            depth_pm1_usd=2_000_000,
+            spread_bps=4.0,
+            rel_volume_5m=1.5,
+            oi_delta_5m=8_000,
+        ),
+    }
+    rotation_state = engine.update(second_states, now=now + timedelta(minutes=2))
+    sol_score = rotation_state.scores["SOLUSDT"]
+    assert sol_score.normalized_depth == pytest.approx(1.0)

@@ -24,11 +24,15 @@ class TelemetryStorage:
         *,
         logs_dir: Path,
         reports_dir: Path,
+        runtime_session_stats_path: Path | None = None,
     ) -> None:
         self._logs_dir = logs_dir
         self._reports_dir = reports_dir
+        self._runtime_session_stats_path = runtime_session_stats_path
         self._logs_dir.mkdir(parents=True, exist_ok=True)
         self._reports_dir.mkdir(parents=True, exist_ok=True)
+        if self._runtime_session_stats_path is not None:
+            self._runtime_session_stats_path.parent.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     # JSON event logs
@@ -74,20 +78,33 @@ class TelemetryStorage:
 
         date_str = stats.end_time.strftime("%Y%m%d")
         path = self._reports_dir / f"session_stats_{date_str}.json"
+        payload = stats.to_dict()
         try:
             with path.open("w", encoding="utf-8") as handle:
-                json.dump(stats.to_dict(), handle, indent=2, ensure_ascii=False)
+                json.dump(payload, handle, indent=2, ensure_ascii=False)
         except OSError as exc:  # pragma: no cover
             raise TelemetryError(f"Failed to write session stats: {exc}") from exc
+        if self._runtime_session_stats_path is not None:
+            try:
+                self._runtime_session_stats_path.write_text(
+                    json.dumps(payload, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+            except OSError as exc:  # pragma: no cover
+                raise TelemetryError(f"Failed to mirror session stats: {exc}") from exc
         return path
 
 
-def default_storage(base_dir: Path) -> TelemetryStorage:
+def default_storage(base_dir: Path, *, runtime_session_stats_path: Path | None = None) -> TelemetryStorage:
     """Factory returning storage rooted under ``base_dir``."""
 
     logs_dir = base_dir / "logs"
     reports_dir = base_dir / "reports"
-    return TelemetryStorage(logs_dir=logs_dir, reports_dir=reports_dir)
+    return TelemetryStorage(
+        logs_dir=logs_dir,
+        reports_dir=reports_dir,
+        runtime_session_stats_path=runtime_session_stats_path,
+    )
 
 
 __all__ = ["TelemetryStorage", "default_storage"]

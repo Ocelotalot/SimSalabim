@@ -21,33 +21,35 @@ from app.rotation.models import RotationState, SymbolScore
 
 @dataclass(slots=True)
 class _RollingMetric:
-    """Maintain a sliding window of numeric observations for normalization."""
+    """Maintain per-symbol sliding windows for numeric normalization."""
 
     window: timedelta
-    samples: Deque[tuple[datetime, float]]
+    samples: Dict[str, Deque[tuple[datetime, float]]]
 
     def __init__(self, window: timedelta) -> None:
         self.window = window
-        self.samples = deque()
+        self.samples = {}
 
-    def add(self, timestamp: datetime, value: float) -> None:
-        self.samples.append((timestamp, value))
-        self._trim(timestamp)
+    def add(self, symbol: str, timestamp: datetime, value: float) -> None:
+        history = self.samples.setdefault(symbol, deque())
+        history.append((timestamp, value))
+        self._trim(history, timestamp)
 
-    def normalize(self, value: float) -> float:
-        if not self.samples:
+    def normalize(self, symbol: str, value: float) -> float:
+        history = self.samples.get(symbol)
+        if not history:
             return 0.0
-        values = [sample for _, sample in self.samples]
+        values = [sample for _, sample in history]
         min_value = min(values)
         max_value = max(values)
         if max_value - min_value < 1e-9:
             return 1.0
         return (value - min_value) / (max_value - min_value)
 
-    def _trim(self, now: datetime) -> None:
+    def _trim(self, history: Deque[tuple[datetime, float]], now: datetime) -> None:
         cutoff = now - self.window
-        while self.samples and self.samples[0][0] < cutoff:
-            self.samples.popleft()
+        while history and history[0][0] < cutoff:
+            history.popleft()
 
 
 class RotationEngine:
@@ -132,15 +134,15 @@ class RotationEngine:
             rel_volume = max(state.rel_volume_5m, 0.0)
             oi_delta = state.oi_delta_5m
 
-            self._depth_metric.add(timestamp, depth)
-            self._spread_metric.add(timestamp, spread_inv)
-            self._rel_volume_metric.add(timestamp, rel_volume)
-            self._oi_delta_metric.add(timestamp, oi_delta)
+            self._depth_metric.add(symbol, timestamp, depth)
+            self._spread_metric.add(symbol, timestamp, spread_inv)
+            self._rel_volume_metric.add(symbol, timestamp, rel_volume)
+            self._oi_delta_metric.add(symbol, timestamp, oi_delta)
 
-            normalized_depth = self._depth_metric.normalize(depth)
-            normalized_inv_spread = self._spread_metric.normalize(spread_inv)
-            normalized_rel_volume = self._rel_volume_metric.normalize(rel_volume)
-            normalized_oi_delta = self._oi_delta_metric.normalize(oi_delta)
+            normalized_depth = self._depth_metric.normalize(symbol, depth)
+            normalized_inv_spread = self._spread_metric.normalize(symbol, spread_inv)
+            normalized_rel_volume = self._rel_volume_metric.normalize(symbol, rel_volume)
+            normalized_oi_delta = self._oi_delta_metric.normalize(symbol, oi_delta)
 
             score = (
                 0.4 * normalized_depth
@@ -171,26 +173,25 @@ class RotationEngine:
     def _select_active_symbols(self, scores: Mapping[str, SymbolScore]) -> Sequence[str]:
         min_score = self._config.min_score_for_new_entry
         top_n = self._config.max_active_symbols
-        core_symbols = [
-            cfg.symbol
-            for cfg in self._symbol_map.values()
-            if cfg.enabled and cfg.group == SymbolGroup.CORE
-        ]
         eligible_scores = [score for symbol, score in scores.items() if symbol in self._symbol_map]
-        eligible_scores.sort(key=lambda score: score.score, reverse=True)
-        high_quality = [score for score in eligible_scores if score.score >= min_score]
+
+        def _priority(score: SymbolScore) -> tuple[float, int, str]:
+            cfg = self._symbol_map.get(score.symbol)
+            group_priority = 0 if cfg and cfg.group == SymbolGroup.CORE else 1
+            return (-score.score, group_priority, score.symbol)
+
+        eligible_scores.sort(key=_priority)
 
         active: list[str] = []
-        seen = set()
-        for symbol in core_symbols:
-            if symbol not in seen:
-                active.append(symbol)
-                seen.add(symbol)
+        seen: set[str] = set()
 
-        for score in high_quality:
-            if score.symbol not in seen:
-                active.append(score.symbol)
-                seen.add(score.symbol)
+        for score in eligible_scores:
+            if score.score < min_score:
+                continue
+            active.append(score.symbol)
+            seen.add(score.symbol)
+            if len(active) >= top_n:
+                break
 
         if len(active) < top_n:
             for score in eligible_scores:
