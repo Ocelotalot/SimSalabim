@@ -304,13 +304,15 @@ class BybitClient:
         """Return open interest info and the 5-minute delta.
 
         The Bybit endpoint returns a chronological list where the first element
-        is the most recent value. ``delta_5m`` equals ``list[0] - list[-1]``.
+        is the most recent value. ``delta_5m`` equals ``list[0] - list[1]``
+        (i.e. compare the latest point to the immediately previous bucket).
         """
 
         params = {
             "category": "linear",
             "symbol": symbol,
             "interval": interval,
+            "limit": 2,
         }
         result, latency = self._request("GET", "/v5/market/open-interest", params=params)
         stats = self._parse_open_interest(symbol, result)
@@ -417,7 +419,7 @@ class BybitClient:
         latest = points[0]
         delta = None
         if len(points) > 1:
-            delta = latest.open_interest - points[-1].open_interest
+            delta = latest.open_interest - points[1].open_interest
         return OpenInterestStats(symbol=latest.symbol, timestamp_ms=latest.timestamp_ms, open_interest=latest.open_interest, delta_5m=delta)
 
 
