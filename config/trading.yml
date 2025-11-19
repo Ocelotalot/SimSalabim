@@ -1,0 +1,47 @@
+# Trading configuration template derived from TZ.txt and ARCHITECTURE.md.
+bybit:
+  mode: demo  # demo | live
+  # rest_endpoint/ws_endpoint are optional overrides when running against mirrors
+update_interval_sec: 15
+timezone: Europe/Minsk
+risk:
+  virtual_equity_usdt: 15000
+  per_trade_risk_pct: 0.0035
+  max_daily_loss_pct: 0.015
+  max_concurrent_positions: 2
+  cooldown_after_loss_min: 20
+  max_leverage: 5
+rotation:
+  enabled: true
+  check_interval_min: 5
+  min_score_for_new_entry: 0.55
+  max_active_symbols: 5
+filters:
+  liquidity_core:
+    min_depth_usd: 3000000
+    max_spread_bps: 3
+  liquidity_plus:
+    min_depth_usd: 1000000
+    max_spread_bps: 5
+  liquidity_rotation:
+    min_depth_usd: 1000000
+    max_spread_bps: 5
+  max_latency_ms: 250
+  max_avg_slippage_bps: 5
+tf_profiles:
+  aggr:
+    trigger_tf: 1m
+    confirm_tf: 3m
+    slow_tf: 5m
+  bal:
+    trigger_tf: 3m
+    confirm_tf: 5m
+    slow_tf: 15m
+  cons:
+    trigger_tf: 5m
+    confirm_tf: 15m
+    slow_tf: 1h
+telemetry:
+  stats_interval_min: 60
+  log_level: INFO
+  reports_dir: data/logs
