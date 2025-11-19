@@ -200,7 +200,7 @@ def main() -> None:
         nonlocal runtime_state
         risk_engine.record_trade_pnl(pnl, when)
         runtime_state.daily_pnl_usdt += pnl
-        runtime_store.save_state(runtime_state)
+        runtime_state = runtime_store.update_state(daily_pnl_usdt=runtime_state.daily_pnl_usdt)
 
     gateway = PaperOrderGateway(market_service.last_price, logger.getChild("paper_gateway"))
     execution_engine = ExecutionEngine(
@@ -285,7 +285,6 @@ def main() -> None:
                     cooldown_alerted = False
             else:
                 logger.debug("bot_running is false – skipping new entries")
-            runtime_store.save_state(runtime_state)
             loop_duration = time.perf_counter() - loop_start
             sleep_for = max(0.0, update_interval - loop_duration)
             time.sleep(sleep_for)
