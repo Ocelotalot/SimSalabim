@@ -44,7 +44,7 @@ def load_trading_config(path: Path | str = _DEFAULT_CONFIG_DIR / "trading.yml") 
     """
 
     data = _read_yaml(Path(path))
-    return TradingConfig.parse_obj(data)
+    return TradingConfig.model_validate(data)
 
 
 def load_symbols_config(path: Path | str = _DEFAULT_CONFIG_DIR / "symbols.yml") -> List[SymbolConfig]:
@@ -56,7 +56,7 @@ def load_symbols_config(path: Path | str = _DEFAULT_CONFIG_DIR / "symbols.yml") 
         raise ValueError("symbols.yml must contain `symbols: [...]`")
     if not isinstance(raw_symbols, Sequence):
         raise TypeError("`symbols` must be a list")
-    return [SymbolConfig.parse_obj(entry) for entry in raw_symbols]
+    return [SymbolConfig.model_validate(entry) for entry in raw_symbols]
 
 
 def load_strategies_config(path: Path | str = _DEFAULT_CONFIG_DIR / "strategies.yml") -> Dict[str, StrategyRuntimeConfig]:
@@ -73,7 +73,7 @@ def load_strategies_config(path: Path | str = _DEFAULT_CONFIG_DIR / "strategies.
         raise TypeError("`strategies` must be a list")
     parsed: Dict[str, StrategyRuntimeConfig] = {}
     for entry in raw_strategies:
-        cfg = StrategyRuntimeConfig.parse_obj(entry)
+        cfg = StrategyRuntimeConfig.model_validate(entry)
         parsed[cfg.id] = cfg
     return parsed
 
@@ -86,7 +86,7 @@ def load_secrets_config(path: Path | str = _DEFAULT_CONFIG_DIR / "secrets.yaml")
     """
 
     data = _read_yaml(Path(path))
-    return ApiCredentialsConfig.parse_obj(data)
+    return ApiCredentialsConfig.model_validate(data)
 
 
 def load_app_config(

@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, PositiveInt, validator
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
 
 
 class BybitMode(str, Enum):
@@ -57,8 +57,7 @@ class ApiCredentialsConfig(BaseModel):
     bybit: BybitCredentials
     telegram: TelegramCredentials
 
-    class Config:
-        allow_mutation = False
+    model_config = ConfigDict(frozen=True)
 
 
 class SymbolConfig(BaseModel):
@@ -74,14 +73,13 @@ class SymbolConfig(BaseModel):
     max_leverage: int = Field(5, ge=1)
     max_notional_usdt: Optional[float] = Field(None, gt=0)
 
-    @validator("enabled", pre=True, always=True)
-    def _default_enabled(cls, value: Optional[bool], values: Dict[str, Any]) -> bool:
-        if value is not None:
-            return value
-        group = values.get("group")
-        if group == SymbolGroup.ROTATION:
-            return False
-        return True
+    @model_validator(mode="after")
+    def _apply_enabled_default(self) -> "SymbolConfig":
+        """Set defaults per TZ §3.2 (rotation disabled by default)."""
+
+        if self.enabled is None:
+            self.enabled = self.group != SymbolGroup.ROTATION
+        return self
 
 
 class StrategyRuntimeConfig(BaseModel):
