@@ -1,6 +1,18 @@
 {
-  "last_session_start": null,
-  "last_session_end": null,
-  "realized_pnl_usdt": 0.0,
-  "win_rate": null
+  "start_time": "2024-01-01T00:00:00+00:00",
+  "end_time": "2024-01-01T00:00:00+00:00",
+  "gross_pnl_usdt": 0.0,
+  "net_pnl_usdt": 0.0,
+  "execution_costs_abs": 0.0,
+  "traded_notional_usdt": 0.0,
+  "trades_count": 0,
+  "wins": 0,
+  "per_strategy_pnl": {},
+  "per_symbol_pnl": {},
+  "leakage_abs": 0.0,
+  "leakage_pct": null,
+  "leakage_valid": false,
+  "execution_costs_pct_of_notional": null,
+  "win_rate": null,
+  "last_updated": "2024-01-01T00:00:00+00:00"
 }
