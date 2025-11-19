@@ -65,7 +65,7 @@ class RuntimeStateStore:
     # Runtime state -----------------------------------------------------
     def load_state(self) -> RuntimeState:
         if not self.runtime_state_path.exists():
-            return RuntimeState()
+            return self.save_state(RuntimeState())
         try:
             payload = json.loads(self.runtime_state_path.read_text(encoding="utf-8"))
         except OSError as exc:  # pragma: no cover
@@ -136,10 +136,11 @@ class RuntimeStateStore:
 
 def _parse_dt(value: Any) -> datetime:
     if isinstance(value, datetime):
-        return value
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     if not value:
         return datetime.now(tz=timezone.utc)
-    return datetime.fromisoformat(value)
+    parsed = datetime.fromisoformat(value)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 __all__ = ["RuntimeState", "RuntimeStateStore"]

@@ -36,7 +36,8 @@ from app.runtime.state import RuntimeState, RuntimeStateStore
 from app.strategies.base import BaseStrategy
 from app.strategies.registry import build_active_strategies
 from app.telemetry import configure_logging
-from app.telemetry.storage import default_storage
+from app.telemetry.events import TelemetryEvent
+from app.telemetry.storage import TelemetryStorage, default_storage
 
 FETCH_TIMEFRAMES: tuple[Timeframe, ...] = (
     Timeframe.MIN_1,
@@ -179,7 +180,9 @@ def main() -> None:
     config = load_app_config(secrets_path=secrets_path)
 
     telemetry_root = (project_root / config.trading.telemetry.reports_dir).resolve()
-    _telemetry_storage = default_storage(telemetry_root)
+    _telemetry_storage = default_storage(
+        telemetry_root, runtime_session_stats_path=runtime_dir / "session_stats.json"
+    )
     log_dir = telemetry_root / "logs"
     logger = configure_logging(log_dir=log_dir, level=config.trading.telemetry.log_level)
     logger.info("Bootstrapping bot", extra={"mode": config.trading.bybit.mode.value})
@@ -263,6 +266,7 @@ def main() -> None:
                 continue
             try:
                 rotation_state = rotation_engine.update({str(sym): state for sym, state in market_states.items()})
+                _log_rotation_snapshot(_telemetry_storage, rotation_state, logger)
             except Exception as exc:  # pragma: no cover - rotation edge
                 logger.warning("Rotation update failed: %s", exc)
             reports = execution_engine.on_market_snapshot(market_states)
@@ -437,6 +441,31 @@ def _dispatch_reports(
             position = execution_engine.positions.get(report.symbol)
             remaining = float(position.size) if position else 0.0
             telegram_bot.notify_execution(report, remaining_qty=remaining)
+
+
+def _log_rotation_snapshot(
+    storage: TelemetryStorage,
+    state: RotationState | None,
+    logger: logging.Logger,
+) -> None:
+    if state is None:
+        return
+    payload = {
+        "min_score": state.min_score,
+        "top_n": state.top_n,
+        "active_symbols": list(state.active_symbols),
+        "scores": {symbol: round(score.score, 6) for symbol, score in state.scores.items()},
+    }
+    event = TelemetryEvent(
+        timestamp=state.timestamp,
+        event_type="rotation_state",
+        payload=payload,
+        context={"check_interval_min": state.check_interval_min},
+    )
+    try:
+        storage.append_event(event)
+    except Exception as exc:  # pragma: no cover - telemetry path
+        logger.warning("Failed to log rotation snapshot: %s", exc)
 
 
 if __name__ == "__main__":
