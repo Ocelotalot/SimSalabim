@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Callable, Mapping, MutableMapping, Protocol
 
@@ -38,11 +38,14 @@ class ExecutionEngine:
     trailing_callback: Callable[[PositionState, MarketState], float] | None = None
     pnl_callback: Callable[[float, datetime], None] | None = None
     default_entry_ttl_sec: int = 300
+    positions: MutableMapping[Symbol, PositionState] = field(init=False, default_factory=dict)
+    entry_intents: MutableMapping[str, EntryIntent] = field(init=False, default_factory=dict)
+    active_orders: MutableMapping[str, ActiveOrder] = field(init=False, default_factory=dict)
 
     def __post_init__(self) -> None:
-        self.positions: MutableMapping[Symbol, PositionState] = {}
-        self.entry_intents: MutableMapping[str, EntryIntent] = {}
-        self.active_orders: MutableMapping[str, ActiveOrder] = {}
+        self.positions.clear()
+        self.entry_intents.clear()
+        self.active_orders.clear()
 
     # ------------------------------------------------------------------
     # Public orchestrator
@@ -83,12 +86,12 @@ class ExecutionEngine:
         )
         self.entry_intents[intent.intent_id] = intent
         if intent.entry_type == "market_with_cap":
-            self._execute_market_intent(intent, mkt, decision)
+            self._execute_market_intent(intent, mkt, decision, now)
         elif intent.entry_type == "limit_on_retest":
             self._track_limit_intent(intent, mkt)
         else:
             # Default to market execution for unknown types.
-            self._execute_market_intent(intent, mkt, decision)
+            self._execute_market_intent(intent, mkt, decision, now)
         return intent
 
     def on_market_snapshot(
@@ -288,7 +291,13 @@ class ExecutionEngine:
     # ------------------------------------------------------------------
     # Entry logic
     # ------------------------------------------------------------------
-    def _execute_market_intent(self, intent: EntryIntent, mkt: MarketState | None, decision: RiskDecision) -> None:
+    def _execute_market_intent(
+        self,
+        intent: EntryIntent,
+        mkt: MarketState | None,
+        decision: RiskDecision,
+        now: datetime | None = None,
+    ) -> None:
         expected = self._estimate_slippage(intent, mkt)
         intent.expected_slippage_bps = expected
         limit = decision.metadata.get("max_slippage_bps", self.limits.max_slippage_bps)
@@ -300,11 +309,12 @@ class ExecutionEngine:
             side=intent.side,
             order_type=OrderType.MARKET,
             quantity=intent.size,
+            price=intent.entry_price,
             time_in_force=TimeInForce.FOK,
             client_order_id=intent.intent_id,
             comment="market_with_cap",
         )
-        self._submit_order(intent, order)
+        self._submit_order(intent, order, now)
 
     def _track_limit_intent(self, intent: EntryIntent, mkt: MarketState | None) -> None:
         intent.status = EntryIntentStatus.PENDING
@@ -358,9 +368,9 @@ class ExecutionEngine:
                 client_order_id=intent.intent_id,
                 comment="limit_on_retest",
             )
-            self._submit_order(intent, order)
+            self._submit_order(intent, order, now)
 
-    def _submit_order(self, intent: EntryIntent, order: OrderIntent) -> None:
+    def _submit_order(self, intent: EntryIntent, order: OrderIntent, now: datetime | None = None) -> None:
         try:
             active_order = self.gateway.submit_order(order)
         except Exception as exc:  # pragma: no cover - network errors
@@ -368,7 +378,7 @@ class ExecutionEngine:
             return
         self.active_orders[active_order.order_id] = active_order
         if active_order.status == OrderStatus.FILLED:
-            self.handle_order_update(active_order)
+            self.handle_order_update(active_order, now=now)
 
     # ------------------------------------------------------------------
     # Utility calculations
