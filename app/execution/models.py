@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
@@ -86,7 +86,7 @@ class ActiveOrder:
     status: OrderStatus
     filled_qty: float = 0.0
     avg_fill_price: float = 0.0
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime | None = None
     expires_at: datetime | None = None
 

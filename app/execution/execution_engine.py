@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Mapping, MutableMapping, Protocol
 
 from app.core.enums import OrderType, Side, TimeInForce
@@ -60,7 +60,7 @@ class ExecutionEngine:
 
         if not decision.approved or decision.size is None or decision.sl_price is None:
             return None
-        now = now or datetime.utcnow()
+        now = now or datetime.now(timezone.utc)
         metadata = dict(decision.metadata or {})
         if decision.time_stop_bars is not None:
             metadata.setdefault("time_stop_bars", decision.time_stop_bars)
@@ -101,7 +101,7 @@ class ExecutionEngine:
     ) -> list[ExecutionReport]:
         """Process price updates for limit triggers, SL/TP, trailing and time-stop."""
 
-        now = now or datetime.utcnow()
+        now = now or datetime.now(timezone.utc)
         reports: list[ExecutionReport] = []
         reports.extend(self._activate_limit_retests(market_state, now))
         for symbol, position in list(self.positions.items()):
@@ -116,7 +116,7 @@ class ExecutionEngine:
     def handle_order_update(self, order: ActiveOrder, now: datetime | None = None) -> list[ExecutionReport]:
         """Update state based on Bybit execution callback (partial fills, etc.)."""
 
-        now = now or datetime.utcnow()
+        now = now or datetime.now(timezone.utc)
         reports: list[ExecutionReport] = []
         self.active_orders[order.order_id] = order
         intent = self.entry_intents.get(order.intent_id)
@@ -164,6 +164,9 @@ class ExecutionEngine:
             self.entry_intents.pop(intent.intent_id, None)
         else:
             # Partial fills accumulate until Bybit sends a final FILLED update.
+            # We keep the intent ACTIVE so that either a later FILLED (full entry)
+            # or CANCELLED (partial entry with remainder voided) branch can turn
+            # the fills into PositionState legs per TZ §5.3.
             intent.status = EntryIntentStatus.ACTIVE
             intent.filled_qty = order.filled_qty
         return reports
@@ -319,7 +322,7 @@ class ExecutionEngine:
     def _track_limit_intent(self, intent: EntryIntent, mkt: MarketState | None) -> None:
         intent.status = EntryIntentStatus.PENDING
         if mkt:
-            self._maybe_trigger_limit(intent, mkt, datetime.utcnow())
+            self._maybe_trigger_limit(intent, mkt, datetime.now(timezone.utc))
 
     def _activate_limit_retests(
         self,
