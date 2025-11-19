@@ -12,10 +12,16 @@ if False:  # pragma: no cover - for typing only
     from app.execution.execution_engine import ExecutionEngine  # noqa: F401
 
 
-class PositionSnapshot(Mapping[str, object], Protocol):
+class PositionSnapshot(Protocol):
     """Structural typing for Bybit REST /v5/position responses."""
 
     def get(self, key: str, default: object | None = None) -> object | None: ...
+
+    def __getitem__(self, key: str) -> object: ...  # pragma: no cover - typing only
+
+    def __iter__(self): ...  # pragma: no cover - typing only
+
+    def __len__(self) -> int: ...  # pragma: no cover - typing only
 
 
 class PositionFetcher(Protocol):
