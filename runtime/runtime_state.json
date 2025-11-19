@@ -1,6 +1,12 @@
 {
   "bot_running": false,
-  "per_trade_risk_pct": 0.5,
-  "virtual_equity_usdt": 10000.0,
-  "max_concurrent_positions": 3
+  "per_trade_risk_pct": 0.0035,
+  "virtual_equity_usdt": 150.0,
+  "max_concurrent_positions": 2,
+  "daily_pnl_usdt": 0.0,
+  "max_daily_loss_pct": 0.015,
+  "session_start": "2024-01-01T00:00:00+00:00",
+  "last_runtime_update": "2024-01-01T00:00:00+00:00",
+  "last_command": null,
+  "notes": null
 }

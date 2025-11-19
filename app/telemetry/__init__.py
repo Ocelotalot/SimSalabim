@@ -1,7 +1,13 @@
-"""Telemetry and logging subsystem package.
+"""Telemetry and logging subsystem package."""
+from .events import SessionStats, TelemetryEvent, TradeRecord
+from .logging_setup import configure_logging
+from .storage import TelemetryStorage, default_storage
 
-Telemetry modules will emit structured events, persist trade/session artifacts
-under /data, and configure JSON logging for observability and debugging.
-"""
-
-__all__: list[str] = []
+__all__ = [
+    "TelemetryEvent",
+    "TradeRecord",
+    "SessionStats",
+    "configure_logging",
+    "TelemetryStorage",
+    "default_storage",
+]
