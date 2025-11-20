@@ -1,6 +1,7 @@
 """ExecutionEngine orchestrating intents, orders and position lifecycle."""
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -35,17 +36,24 @@ class ExecutionEngine:
 
     gateway: OrderGateway
     limits: RiskLimits
+    mode: str = "demo"
+    logger: logging.Logger = field(default_factory=lambda: logging.getLogger("bybit_bot.execution"))
     trailing_callback: Callable[[PositionState, MarketState], float] | None = None
     pnl_callback: Callable[[float, datetime], None] | None = None
     default_entry_ttl_sec: int = 300
     positions: MutableMapping[Symbol, PositionState] = field(init=False, default_factory=dict)
     entry_intents: MutableMapping[str, EntryIntent] = field(init=False, default_factory=dict)
     active_orders: MutableMapping[str, ActiveOrder] = field(init=False, default_factory=dict)
+    cycle_orders_sent: int = field(init=False, default=0)
 
     def __post_init__(self) -> None:
         self.positions.clear()
         self.entry_intents.clear()
         self.active_orders.clear()
+        self.cycle_orders_sent = 0
+
+    def reset_cycle_counters(self) -> None:
+        self.cycle_orders_sent = 0
 
     # ------------------------------------------------------------------
     # Public orchestrator
@@ -378,7 +386,22 @@ class ExecutionEngine:
             active_order = self.gateway.submit_order(order)
         except Exception as exc:  # pragma: no cover - network errors
             intent.status = EntryIntentStatus.REJECTED
+            self.logger.warning(
+                "Order submission failed",
+                exc_info=exc,
+                extra={"symbol": str(order.symbol), "side": order.side.value},
+            )
             return
+        self.cycle_orders_sent += 1
+        self.logger.info(
+            "Orders sent to exchange",
+            extra={
+                "mode": self.mode,
+                "n_orders_sent": 1,
+                "symbols": [str(order.symbol)],
+                "entry_type": order.comment,
+            },
+        )
         self.active_orders[active_order.order_id] = active_order
         if active_order.status == OrderStatus.FILLED:
             self.handle_order_update(active_order, now=now)

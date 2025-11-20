@@ -1,6 +1,7 @@
 """Base contracts for strategies and normalized signal payloads (TZ §4.6)."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
@@ -57,6 +58,7 @@ class BaseStrategy:
     def __init__(self, runtime_config: StrategyRuntimeConfig):
         self.runtime_config = runtime_config
         self.parameters = runtime_config.parameters or {}
+        self.logger = logging.getLogger("bybit_bot.strategies")
 
     def param(self, key: str, default: Any) -> Any:
         """Convenience accessor returning parameter overrides when provided."""
