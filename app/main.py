@@ -40,6 +40,8 @@ from app.telemetry import configure_logging
 from app.telemetry.events import TelemetryEvent
 from app.telemetry.storage import TelemetryStorage, default_storage
 
+logger_signals = logging.getLogger("bybit_bot.signal_flow")
+
 FETCH_TIMEFRAMES: tuple[Timeframe, ...] = (
     Timeframe.MIN_1,
     Timeframe.MIN_3,
@@ -442,9 +444,23 @@ def _collect_signals(
     rotation_state: RotationState | None,
 ) -> list:
     allowed = set(rotation_state.active_symbols) if rotation_state else None
-    collected = []
+    collected: list[Signal] = []
+    raw_counts: Counter[str] = Counter()
+    filtered_counts: Counter[str] = Counter()
+    strategy_ids = [s.id.value for s in strategies]
+    logger_signals.debug(
+        "Collecting signals from strategies",
+        extra={
+            "n_strategies": len(strategy_ids),
+            "strategy_ids": strategy_ids,
+            "n_markets": len(market_states),
+            "rotation_whitelist": sorted(allowed) if allowed else None,
+        },
+    )
+
     for strategy in strategies:
         raw = strategy.generate_signals(market_states, positions)
+        raw_counts[strategy.id.value] += len(raw)
         for signal in raw:
             mkt = market_states.get(signal.symbol)
             if not mkt:
@@ -455,7 +471,21 @@ def _collect_signals(
             ok, _ = filters.validate(mkt, trade_style=style)
             if not ok:
                 continue
+            filtered_counts[strategy.id.value] += 1
             collected.append(signal)
+
+    logger_signals.debug(
+        "Collected signals summary",
+        extra={
+            "n_strategies": len(strategy_ids),
+            "strategy_ids": strategy_ids,
+            "n_signals_raw": sum(raw_counts.values()),
+            "signals_raw_by_strategy": dict(raw_counts),
+            "n_signals_after_filters": len(collected),
+            "signals_after_filters_by_strategy": dict(filtered_counts),
+            "rotation_whitelist": sorted(allowed) if allowed else None,
+        },
+    )
     return collected
 
 

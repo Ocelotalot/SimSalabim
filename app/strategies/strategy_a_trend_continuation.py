@@ -11,7 +11,7 @@ from .base import BaseStrategy, Signal, TakeProfitLevel
 
 
 class StrategyATrendContinuation(BaseStrategy):
-    """Trend continuation around EMA20/50 alignment with VWAP filter."""
+    """Trend continuation around VWAP slope/ADX alignment with controlled pullbacks."""
 
     id = StrategyId.STRATEGY_A
     name = "Trend-Continuation (EMA/VWAP)"
@@ -19,15 +19,10 @@ class StrategyATrendContinuation(BaseStrategy):
     def __init__(self, runtime_config):
         super().__init__(runtime_config)
         self.time_stop_bars = int(self.param("time_stop_bars", 20))
-        self.ema_tolerance_ticks = float(self.param("ema20_tolerance_ticks", 1))
-        self.tick_size = float(self.param("tick_size", 0.1))
-        self.min_adx = float(self.param("min_adx", 20))
-        self.min_rel_volume = float(self.param("min_rel_volume", 1.1))
-
-    def _price_near_ema(self, price: float, ema_value: float | None) -> bool:
-        if ema_value is None:
-            return False
-        return abs(price - ema_value) <= self.tick_size * self.ema_tolerance_ticks
+        self.min_adx = float(self.param("min_adx", 18))
+        self.min_rel_volume = float(self.param("min_rel_volume", 1.0))
+        self.min_vwap_slope = float(self.param("min_vwap_slope", 0.0))
+        self.max_distance_sigma = float(self.param("max_distance_sigma", 2.0))
 
     def _build_tp_levels(self, entry_price: float, sl_price: float, side: Side) -> tuple[TakeProfitLevel, ...]:
         risk = abs(entry_price - sl_price)
@@ -43,8 +38,8 @@ class StrategyATrendContinuation(BaseStrategy):
 
     def _build_signal(self, symbol: Symbol, side: Side, state: MarketState) -> Signal:
         entry_price = state.mid_price
-        atr = state.ATR_14_5m
-        risk_multiple = 1.2 * atr
+        atr = max(state.ATR_14_5m, entry_price * 0.001)
+        risk_multiple = max(1.2 * atr, entry_price * 0.001)
         sl_price = entry_price - risk_multiple if side == Side.LONG else entry_price + risk_multiple
         tp_levels = self._build_tp_levels(entry_price, sl_price, side)
         return Signal(
@@ -66,36 +61,34 @@ class StrategyATrendContinuation(BaseStrategy):
         )
 
     def _market_allows_long(self, state: MarketState) -> bool:
-        ema20 = getattr(state, "ema20", None)
-        ema50 = getattr(state, "ema50", None)
-        if not self._price_near_ema(state.mid_price, ema20):
-            return False
-        if ema20 is None or ema50 is None or ema20 <= ema50:
+        sigma = state.sigma_vwap
+        if sigma <= 0:
             return False
         if state.ADX_15m < self.min_adx:
             return False
         if state.rel_volume_5m < self.min_rel_volume:
             return False
-        if state.vwap_slope < 0:
+        if state.vwap_slope <= self.min_vwap_slope:
             return False
-        if state.distance_to_vwap > 2 * state.sigma_vwap:
+        if state.mid_price < state.vwap_mean:
+            return False
+        if state.distance_to_vwap > self.max_distance_sigma * sigma:
             return False
         return True
 
     def _market_allows_short(self, state: MarketState) -> bool:
-        ema20 = getattr(state, "ema20", None)
-        ema50 = getattr(state, "ema50", None)
-        if not self._price_near_ema(state.mid_price, ema20):
-            return False
-        if ema20 is None or ema50 is None or ema20 >= ema50:
+        sigma = state.sigma_vwap
+        if sigma <= 0:
             return False
         if state.ADX_15m < self.min_adx:
             return False
         if state.rel_volume_5m < self.min_rel_volume:
             return False
-        if state.vwap_slope > 0:
+        if state.vwap_slope >= -self.min_vwap_slope:
             return False
-        if state.distance_to_vwap > 2 * state.sigma_vwap:
+        if state.mid_price > state.vwap_mean:
+            return False
+        if state.distance_to_vwap > self.max_distance_sigma * sigma:
             return False
         return True
 
@@ -105,6 +98,17 @@ class StrategyATrendContinuation(BaseStrategy):
         position_state: Mapping[Symbol, object],
     ) -> list[Signal]:
         signals: list[Signal] = []
+        symbols = sorted(str(sym) for sym in market_state.keys())
+        tf_profiles = sorted({state.tf_profile.value for state in market_state.values()})
+        self.logger.debug(
+            "generate_signals called",
+            extra={
+                "strategy_id": self.id.value,
+                "strategy_name": self.name,
+                "symbols": symbols,
+                "tf_profiles": tf_profiles,
+            },
+        )
         for symbol, state in market_state.items():
             pos_side = self.position_side(position_state, symbol)
             if pos_side == Side.LONG:

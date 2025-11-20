@@ -11,7 +11,7 @@ from .base import BaseStrategy, Signal, TakeProfitLevel
 
 
 class StrategyELiquiditySweep(BaseStrategy):
-    """Fade stop-runs on BTC/ETH when absorption and flow reversal align."""
+    """Fade stop-runs on BTC/ETH when price stretches far from VWAP and flow turns."""
 
     id = StrategyId.STRATEGY_E
     name = "Liquidity-Sweep Reversal"
@@ -22,7 +22,8 @@ class StrategyELiquiditySweep(BaseStrategy):
         self.lookback_bars = int(self.param("n_sweep", 15))
         self.sl_buffer_ticks = float(self.param("sl_buffer_ticks", 3))
         self.tick_size = float(self.param("tick_size", 0.5))
-        self.absorption_threshold = float(self.param("absorption_threshold", 0.6))
+        self.sweep_sigma = float(self.param("sweep_sigma", 1.2))
+        self.min_rel_volume = float(self.param("min_rel_volume", 0.9))
         self.time_stop_bars = int(self.param("time_stop_bars", 20))
 
     def _extreme_levels(self, state: MarketState) -> tuple[float | None, float | None]:
@@ -30,15 +31,11 @@ class StrategyELiquiditySweep(BaseStrategy):
         low = getattr(state, f"rolling_low_{self.lookback_bars}", None)
         return high, low
 
-    def _absorption_ok(self, state: MarketState) -> bool:
-        absorption = getattr(state, "liquidity_absorption_pct", None)
-        return absorption is not None and absorption >= self.absorption_threshold
-
-    def _flow_reversal(self, state: MarketState) -> bool:
-        prev_flow = getattr(state, "prev_delta_flow_1m", None)
-        if prev_flow is None:
-            return True
-        return prev_flow * state.delta_flow_1m <= 0
+    def _flow_reversal(self, state: MarketState, *, expect_long: bool) -> bool:
+        flow = state.delta_flow_1m
+        if expect_long:
+            return flow >= 0
+        return flow <= 0
 
     def _latency_ok(self, state: MarketState) -> bool:
         if state.latency_ms > 200:
@@ -79,26 +76,44 @@ class StrategyELiquiditySweep(BaseStrategy):
         position_state: Mapping[Symbol, object],
     ) -> list[Signal]:
         signals: list[Signal] = []
+        symbols = sorted(str(sym) for sym in market_state.keys())
+        tf_profiles = sorted({state.tf_profile.value for state in market_state.values()})
+        self.logger.debug(
+            "generate_signals called",
+            extra={
+                "strategy_id": self.id.value,
+                "strategy_name": self.name,
+                "symbols": symbols,
+                "tf_profiles": tf_profiles,
+            },
+        )
         for symbol, state in market_state.items():
             if symbol not in self.allowed_symbols:
                 continue
             if not self._latency_ok(state):
                 continue
-            if not self._absorption_ok(state):
+            if state.rel_volume_5m < self.min_rel_volume:
                 continue
-            if not self._flow_reversal(state):
-                continue
-            high, low = self._extreme_levels(state)
-            if high is None or low is None:
+            sigma = state.sigma_vwap
+            if sigma <= 0:
                 continue
             pos_side = self.position_side(position_state, symbol)
             price = state.mid_price
-            if price >= high and pos_side != Side.SHORT:
-                sl_price = high + self.sl_buffer_ticks * self.tick_size
+            distance = price - state.vwap_mean
+            if (
+                distance >= self.sweep_sigma * sigma
+                and pos_side != Side.SHORT
+                and self._flow_reversal(state, expect_long=False)
+            ):
+                sl_price = price + self.sl_buffer_ticks * self.tick_size
                 signals.append(self._build_signal(symbol, Side.SHORT, state, sl_price))
                 continue
-            if price <= low and pos_side != Side.LONG:
-                sl_price = low - self.sl_buffer_ticks * self.tick_size
+            if (
+                distance <= -self.sweep_sigma * sigma
+                and pos_side != Side.LONG
+                and self._flow_reversal(state, expect_long=True)
+            ):
+                sl_price = price - self.sl_buffer_ticks * self.tick_size
                 signals.append(self._build_signal(symbol, Side.LONG, state, sl_price))
         symbols_with_signals = sorted({str(s.symbol) for s in signals})
         self.logger.debug(
