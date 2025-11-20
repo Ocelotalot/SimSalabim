@@ -63,3 +63,4 @@ class StrategyId(str, Enum):
     STRATEGY_C = "strategy_c_range_break"
     STRATEGY_D = "strategy_d_vwap_mean_reversion"
     STRATEGY_E = "strategy_e_liquidity_sweep"
+    STRATEGY_DEBUG_ALWAYS_LONG = "strategy_debug_always_long"

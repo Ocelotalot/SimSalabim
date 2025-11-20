@@ -47,3 +47,8 @@ strategies:
       max_slippage_vs_spread: 1.0
       tp1_target: vwap
       tp2_target: range_extreme
+  - id: strategy_debug_always_long
+    name: Debug Always Long
+    enabled: true
+    priority: 99
+    parameters: {}

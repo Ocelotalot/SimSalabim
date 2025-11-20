@@ -12,6 +12,7 @@ from .strategy_b_bb_squeeze import StrategyBBBBSqueeze
 from .strategy_c_range_break import StrategyCRangeBreak
 from .strategy_d_vwap_mean_reversion import StrategyDVwapMeanReversion
 from .strategy_e_liquidity_sweep import StrategyELiquiditySweep
+from .strategy_debug_always_long import DebugAlwaysLongStrategy
 
 logger = logging.getLogger("bybit_bot.strategies")
 
@@ -21,6 +22,7 @@ STRATEGY_REGISTRY: Dict[str, type[BaseStrategy]] = {
     StrategyCRangeBreak.id.value: StrategyCRangeBreak,
     StrategyDVwapMeanReversion.id.value: StrategyDVwapMeanReversion,
     StrategyELiquiditySweep.id.value: StrategyELiquiditySweep,
+    DebugAlwaysLongStrategy.id.value: DebugAlwaysLongStrategy,
 }
 
 
