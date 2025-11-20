@@ -113,12 +113,13 @@ class StrategyBBBBSqueeze(BaseStrategy):
                 upper_bb = getattr(state, "bb_upper", state.mid_price)
                 sl_price = upper_bb + atr_mult * atr
                 signals.append(self._build_signal(symbol, Side.SHORT, state, atr, sl_price))
+        symbols_with_signals = sorted({str(s.symbol) for s in signals})
         self.logger.debug(
             "Strategy generated signals",
             extra={
                 "strategy_id": self.id.value,
                 "n_signals": len(signals),
-                "symbols": sorted({str(s.symbol) for s in signals}),
+                "symbols": symbols_with_signals,
             },
         )
         return signals
