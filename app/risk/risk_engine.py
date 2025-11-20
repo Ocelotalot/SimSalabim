@@ -104,6 +104,19 @@ class RiskEngine:
         )
         return decisions
 
+    def evaluate(
+        self,
+        signals: Sequence[Signal],
+        open_positions: Mapping[Symbol, PositionState],
+        market_state: Mapping[Symbol, MarketState],
+        rotation_state: object | None = None,
+        now: datetime | None = None,
+    ) -> list[RiskDecision]:
+        """Compatibility wrapper to assess signals with optional rotation data."""
+
+        _ = rotation_state  # reserved for future use
+        return self.assess_signals(signals, open_positions, market_state, now=now)
+
     def record_trade_pnl(self, realized_pnl: float, when: datetime | None = None) -> None:
         """Update daily drawdown stats and enforce cooldown after losses."""
 
