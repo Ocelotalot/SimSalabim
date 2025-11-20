@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
@@ -88,6 +88,8 @@ class MarketDataService:
     symbols: Iterable[SymbolConfig]
     builder: MarketStateBuilder
     logger: logging.Logger
+    _symbol_configs: list[SymbolConfig] = field(init=False)
+    _last_states: Dict[Symbol, MarketState] = field(init=False, default_factory=dict)
 
     def __post_init__(self) -> None:
         self._symbol_configs = [cfg for cfg in self.symbols if cfg.enabled is not False]
