@@ -267,6 +267,9 @@ def main() -> None:
             _sync_limits(runtime_state, risk_limits)
             signals: list[Signal] = []
             decisions: list[RiskDecision] = []
+            approved_decisions: list[RiskDecision] = []
+            rejected_decisions: list[RiskDecision] = []
+            n_orders_sent = 0
             try:
                 market_states = market_service.refresh()
             except Exception as exc:  # pragma: no cover - defensive
@@ -282,7 +285,7 @@ def main() -> None:
                         "n_signals_by_strategy": {},
                         "n_approved_decisions": 0,
                         "n_rejected_decisions": 0,
-                        "n_orders_sent": 0,
+                        "n_orders_sent": n_orders_sent,
                     },
                 )
                 time.sleep(update_interval)
@@ -297,10 +300,13 @@ def main() -> None:
             now = datetime.now(tz=timezone.utc)
             if runtime_state.bot_running:
                 signals = _collect_signals(strategies, market_states, execution_engine.positions, filters, rotation_state)
-                decisions = risk_engine.assess_signals(signals, execution_engine.positions, market_states, now=now)
-                for decision in decisions:
-                    if decision.approved:
-                        execution_engine.handle_risk_decision(decision, market_states.get(decision.symbol))
+                decisions = risk_engine.evaluate(
+                    signals, execution_engine.positions, market_states, rotation_state
+                )
+                approved_decisions = [d for d in decisions if d.approved]
+                rejected_decisions = [d for d in decisions if not d.approved]
+                for decision in approved_decisions:
+                    execution_engine.handle_risk_decision(decision, market_states.get(decision.symbol))
                 breach = risk_engine.daily_state.breach_limit(risk_limits)
                 if breach and not daily_limit_alerted:
                     telegram_bot.notify_guardian("Daily loss limit reached – blocking new entries.")
@@ -316,6 +322,7 @@ def main() -> None:
                     cooldown_alerted = False
             else:
                 logger.debug("bot_running is false – skipping new entries")
+            n_orders_sent = execution_engine.cycle_orders_sent
             signals_by_strategy: dict[str, int] = {}
             for trade_signal in signals:
                 sid = (
@@ -332,9 +339,9 @@ def main() -> None:
                     "n_markets": len(market_states),
                     "n_signals_total": n_signals_total,
                     "n_signals_by_strategy": signals_by_strategy,
-                    "n_approved_decisions": sum(1 for d in decisions if d.approved),
-                    "n_rejected_decisions": sum(1 for d in decisions if not d.approved),
-                    "n_orders_sent": execution_engine.cycle_orders_sent,
+                    "n_approved_decisions": len(approved_decisions),
+                    "n_rejected_decisions": len(rejected_decisions),
+                    "n_orders_sent": n_orders_sent,
                 },
             )
             loop_duration = time.perf_counter() - loop_start
@@ -451,7 +458,7 @@ def _collect_signals(
     rotation_state: RotationState | None,
 ) -> list[Signal]:
     allowed = set(rotation_state.active_symbols) if rotation_state else None
-    collected: list[Signal] = []
+    all_signals: list[Signal] = []
     raw_counts: Counter[str] = Counter()
     filtered_counts: Counter[str] = Counter()
     strategy_ids = [s.id.value for s in strategies]
@@ -494,7 +501,7 @@ def _collect_signals(
             if not ok:
                 continue
             filtered_counts[strategy.id.value] += 1
-            collected.append(signal)
+            all_signals.append(signal)
 
     logger_signals.debug(
         "Collected signals summary",
@@ -503,12 +510,12 @@ def _collect_signals(
             "strategy_ids": strategy_ids,
             "n_signals_raw": sum(raw_counts.values()),
             "signals_raw_by_strategy": dict(raw_counts),
-            "n_signals_after_filters": len(collected),
+            "n_signals_after_filters": len(all_signals),
             "signals_after_filters_by_strategy": dict(filtered_counts),
             "rotation_whitelist": sorted(allowed) if allowed else None,
         },
     )
-    return collected
+    return all_signals
 
 
 def _dispatch_reports(
