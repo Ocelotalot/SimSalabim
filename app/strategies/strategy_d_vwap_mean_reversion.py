@@ -11,7 +11,7 @@ from .base import BaseStrategy, Signal, TakeProfitLevel
 
 
 class StrategyDVwapMeanReversion(BaseStrategy):
-    """Fade VWAP extremes with absorption and delta-flow slowdown filters."""
+    """Fade VWAP extremes with flow/volume brakes when slope is muted."""
 
     id = StrategyId.STRATEGY_D
     name = "VWAP Mean-Reversion"
@@ -22,21 +22,7 @@ class StrategyDVwapMeanReversion(BaseStrategy):
         self.k_lower = float(self.param("k_lower", 1.5))
         self.time_stop_bars = int(self.param("time_stop_bars", 20))
         self.max_slope = float(self.param("max_vwap_slope", 0.0005))
-        self.delta_flow_ratio = float(self.param("delta_flow_ratio", 0.7))
-        self.absorption_threshold = float(self.param("absorption_threshold", 0.6))
-
-    def _absorption_ok(self, state: MarketState) -> bool:
-        absorption = getattr(state, "limit_absorption_pct", None)
-        if absorption is None and hasattr(state, "orderflow_metrics"):
-            metrics = getattr(state, "orderflow_metrics")
-            absorption = metrics.get("limit_absorption_pct") if isinstance(metrics, dict) else None
-        return absorption is not None and absorption >= self.absorption_threshold
-
-    def _delta_flow_slowing(self, state: MarketState) -> bool:
-        reference = getattr(state, "delta_flow_avg_5m", None)
-        if reference is None:
-            return True
-        return abs(state.delta_flow_1m) <= self.delta_flow_ratio * abs(reference)
+        self.min_rel_volume = float(self.param("min_rel_volume", 0.9))
 
     def _build_tp_levels(self, symbol: Symbol, side: Side, state: MarketState) -> tuple[TakeProfitLevel, ...]:
         vwap = state.vwap_mean
@@ -78,12 +64,21 @@ class StrategyDVwapMeanReversion(BaseStrategy):
         position_state: Mapping[Symbol, object],
     ) -> list[Signal]:
         signals: list[Signal] = []
+        symbols = sorted(str(sym) for sym in market_state.keys())
+        tf_profiles = sorted({state.tf_profile.value for state in market_state.values()})
+        self.logger.debug(
+            "generate_signals called",
+            extra={
+                "strategy_id": self.id.value,
+                "strategy_name": self.name,
+                "symbols": symbols,
+                "tf_profiles": tf_profiles,
+            },
+        )
         for symbol, state in market_state.items():
             if abs(state.vwap_slope) > self.max_slope:
                 continue
-            if not self._absorption_ok(state):
-                continue
-            if not self._delta_flow_slowing(state):
+            if state.rel_volume_5m < self.min_rel_volume:
                 continue
             sigma = state.sigma_vwap
             if sigma <= 0:
@@ -93,12 +88,24 @@ class StrategyDVwapMeanReversion(BaseStrategy):
             pos_side = self.position_side(position_state, symbol)
             upper_band = vwap + self.k_upper * sigma
             lower_band = vwap - self.k_lower * sigma
-            atr = state.ATR_14_5m
-            if price <= lower_band and pos_side != Side.LONG:
+            atr = max(state.ATR_14_5m, price * 0.001)
+            distance = price - vwap
+            flow_bias = state.delta_flow_1m
+            oi_bias = state.oi_delta_5m
+
+            if (
+                distance <= -self.k_lower * sigma
+                and pos_side != Side.LONG
+                and (flow_bias >= 0 or oi_bias >= 0)
+            ):
                 sl_price = lower_band - 0.5 * atr
                 signals.append(self._build_signal(symbol, Side.LONG, state, sl_price))
                 continue
-            if price >= upper_band and pos_side != Side.SHORT:
+            if (
+                distance >= self.k_upper * sigma
+                and pos_side != Side.SHORT
+                and (flow_bias <= 0 or oi_bias <= 0)
+            ):
                 sl_price = upper_band + 0.5 * atr
                 signals.append(self._build_signal(symbol, Side.SHORT, state, sl_price))
         symbols_with_signals = sorted({str(s.symbol) for s in signals})

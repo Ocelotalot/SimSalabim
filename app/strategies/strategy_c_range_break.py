@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from app.core.enums import EntryType, Side, StrategyId
+from app.core.enums import EntryType, Regime, Side, StrategyId
 from app.core.types import Symbol
 from app.market.models import MarketState
 
@@ -22,14 +22,6 @@ class StrategyCRangeBreak(BaseStrategy):
         self.rel_volume_gate = float(self.param("rel_volume_gate", 1.3))
         self.retest_tolerance_bps = float(self.param("retest_tolerance_bps", 5))
         self.time_stop_bars = int(self.param("time_stop_bars", 20))
-
-    def _range_levels(self, state: MarketState) -> tuple[float | None, float | None]:
-        return getattr(state, "range_high_12", None), getattr(state, "range_low_12", None)
-
-    def _within_retest(self, level: float, price: float) -> bool:
-        if level <= 0:
-            return False
-        return abs(price - level) / level * 10_000 <= self.retest_tolerance_bps
 
     def _build_signal(self, symbol: Symbol, side: Side, state: MarketState, width: float, sl_price: float) -> Signal:
         entry_price = state.mid_price
@@ -58,25 +50,48 @@ class StrategyCRangeBreak(BaseStrategy):
         position_state: Mapping[Symbol, object],
     ) -> list[Signal]:
         signals: list[Signal] = []
+        symbols = sorted(str(sym) for sym in market_state.keys())
+        tf_profiles = sorted({state.tf_profile.value for state in market_state.values()})
+        self.logger.debug(
+            "generate_signals called",
+            extra={
+                "strategy_id": self.id.value,
+                "strategy_name": self.name,
+                "symbols": symbols,
+                "tf_profiles": tf_profiles,
+            },
+        )
         for symbol, state in market_state.items():
+            sigma = state.sigma_vwap
+            if sigma <= 0:
+                continue
             if state.atr_q_5m < self.atr_gate:
                 continue
             if state.rel_volume_5m < self.rel_volume_gate:
                 continue
-            range_high, range_low = self._range_levels(state)
-            if range_high is None or range_low is None:
-                continue
-            width = range_high - range_low
-            if width <= 0:
-                continue
+            width = max(2 * sigma, state.mid_price * 0.002)
             pos_side = self.position_side(position_state, symbol)
             price = state.mid_price
-            if price >= range_high and pos_side != Side.LONG and self._within_retest(range_high, price):
-                sl_price = range_high - width / 2
+            distance_from_mean = price - state.vwap_mean
+            breakout_strength = distance_from_mean / max(sigma, 1e-9)
+            in_range_regime = state.regime == Regime.RANGE
+
+            if (
+                breakout_strength >= 1.0
+                and state.vwap_slope >= 0
+                and (in_range_regime or breakout_strength <= 2.0)
+                and pos_side != Side.LONG
+            ):
+                sl_price = price - width / 2
                 signals.append(self._build_signal(symbol, Side.LONG, state, width, sl_price))
                 continue
-            if price <= range_low and pos_side != Side.SHORT and self._within_retest(range_low, price):
-                sl_price = range_low + width / 2
+            if (
+                breakout_strength <= -1.0
+                and state.vwap_slope <= 0
+                and (in_range_regime or breakout_strength >= -2.0)
+                and pos_side != Side.SHORT
+            ):
+                sl_price = price + width / 2
                 signals.append(self._build_signal(symbol, Side.SHORT, state, width, sl_price))
         symbols_with_signals = sorted({str(s.symbol) for s in signals})
         self.logger.debug(
