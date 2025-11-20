@@ -22,3 +22,28 @@ strategies:
     parameters:
       lookback_bars: 30
       retest_tolerance_bps: 5
+  - id: strategy_d_vwap_mean_reversion
+    name: VWAP Mean Reversion
+    enabled: true
+    priority: 4
+    parameters:
+      k_upper: 1.5
+      k_lower: 1.5
+      max_flow_deceleration_ratio: 0.7
+      min_absorption_ratio: 0.6
+      max_vwap_slope: 0.0005
+      sl_extra_atr_multiple: 0.5
+      tp1_target: vwap
+      tp2_target: mid_band
+  - id: strategy_e_liquidity_sweep
+    name: Liquidity Sweep Reversal
+    enabled: true
+    priority: 5
+    parameters:
+      sweep_lookback_bars: 15
+      min_one_side_volume_pct: 0.6
+      sl_buffer_ticks: 3
+      max_latency_ms: 200
+      max_slippage_vs_spread: 1.0
+      tp1_target: vwap
+      tp2_target: range_extreme
