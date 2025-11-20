@@ -78,12 +78,13 @@ class StrategyCRangeBreak(BaseStrategy):
             if price <= range_low and pos_side != Side.SHORT and self._within_retest(range_low, price):
                 sl_price = range_low + width / 2
                 signals.append(self._build_signal(symbol, Side.SHORT, state, width, sl_price))
+        symbols_with_signals = sorted({str(s.symbol) for s in signals})
         self.logger.debug(
             "Strategy generated signals",
             extra={
                 "strategy_id": self.id.value,
                 "n_signals": len(signals),
-                "symbols": sorted({str(s.symbol) for s in signals}),
+                "symbols": symbols_with_signals,
             },
         )
         return signals
