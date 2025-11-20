@@ -316,16 +316,18 @@ def main() -> None:
                     cooldown_alerted = False
             else:
                 logger.debug("bot_running is false – skipping new entries")
-            n_signals_by_strategy = {
-                sid.value: count for sid, count in Counter(signal.strategy_id for signal in signals).items()
-            }
+            signals_by_strategy: dict[str, int] = {}
+            for signal in signals:
+                sid = signal.strategy_id.value if isinstance(signal.strategy_id, StrategyId) else str(signal.strategy_id)
+                signals_by_strategy[sid] = signals_by_strategy.get(sid, 0) + 1
+            n_signals_total = len(signals)
             logger.info(
                 "Tick summary",
                 extra={
                     "mode": config.trading.bybit.mode.value,
                     "n_markets": len(market_states),
-                    "n_signals_total": len(signals),
-                    "n_signals_by_strategy": n_signals_by_strategy,
+                    "n_signals_total": n_signals_total,
+                    "n_signals_by_strategy": signals_by_strategy,
                     "n_approved_decisions": sum(1 for d in decisions if d.approved),
                     "n_rejected_decisions": sum(1 for d in decisions if not d.approved),
                     "n_orders_sent": execution_engine.cycle_orders_sent,
@@ -443,7 +445,7 @@ def _collect_signals(
     positions: Mapping[Symbol, PositionState],
     filters: PreTradeFilters,
     rotation_state: RotationState | None,
-) -> list:
+) -> list[Signal]:
     allowed = set(rotation_state.active_symbols) if rotation_state else None
     collected: list[Signal] = []
     raw_counts: Counter[str] = Counter()
