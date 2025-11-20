@@ -317,8 +317,12 @@ def main() -> None:
             else:
                 logger.debug("bot_running is false – skipping new entries")
             signals_by_strategy: dict[str, int] = {}
-            for signal in signals:
-                sid = signal.strategy_id.value if isinstance(signal.strategy_id, StrategyId) else str(signal.strategy_id)
+            for trade_signal in signals:
+                sid = (
+                    trade_signal.strategy_id.value
+                    if isinstance(trade_signal.strategy_id, StrategyId)
+                    else str(trade_signal.strategy_id)
+                )
                 signals_by_strategy[sid] = signals_by_strategy.get(sid, 0) + 1
             n_signals_total = len(signals)
             logger.info(
