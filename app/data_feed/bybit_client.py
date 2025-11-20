@@ -310,7 +310,8 @@ class BybitClient:
         params = {
             "category": "linear",
             "symbol": symbol,
-            "interval": interval,
+            # Bybit expects ``intervalTime`` (5min/15min/30min/1h/4h).
+            "intervalTime": interval,
         }
         result, latency = self._request("GET", "/v5/market/open-interest", params=params)
         stats = self._parse_open_interest(symbol, result)
