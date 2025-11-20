@@ -1,6 +1,7 @@
 """RiskEngine implementing TZ §4.9 logic and the Signal→Risk bridge."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Mapping, MutableMapping, Sequence
@@ -40,6 +41,7 @@ class RiskEngine:
         self.limits = limits
         self.tz = ZoneInfo(timezone)
         self._now = now_fn or (lambda: datetime.now(tz=self.tz))
+        self.logger = logging.getLogger("bybit_bot.risk")
         priority_map: dict[StrategyId, int] = {}
         for cfg in (strategy_configs or {}).values():
             try:
@@ -72,6 +74,10 @@ class RiskEngine:
         available_slots = max(
             0, self.limits.max_concurrent_positions - sum(1 for pos in open_positions.values() if pos.size)
         )
+        rejection_reasons: dict[str, int] = {}
+        conflict_rejected = len(signals) - len(filtered)
+        if conflict_rejected > 0:
+            rejection_reasons["conflict_pruned"] = conflict_rejected
         for signal in filtered:
             decision = self._build_decision(signal, market_state.get(signal.symbol), now)
             if signal.symbol not in open_positions and decision.approved:
@@ -80,6 +86,22 @@ class RiskEngine:
                 else:
                     available_slots -= 1
             decisions.append(decision)
+            if not decision.approved:
+                reason = decision.reason or "unknown"
+                rejection_reasons.setdefault(reason, 0)
+                rejection_reasons[reason] += 1
+        approved_count = sum(1 for d in decisions if d.approved)
+        rejected_count = sum(1 for d in decisions if not d.approved)
+        self.logger.debug(
+            "Risk assessment summary",
+            extra={
+                "n_signals_in": len(signals),
+                "n_conflict_pruned": conflict_rejected,
+                "n_approved": approved_count,
+                "n_rejected": rejected_count + conflict_rejected,
+                "rejection_reasons": rejection_reasons,
+            },
+        )
         return decisions
 
     def record_trade_pnl(self, realized_pnl: float, when: datetime | None = None) -> None:

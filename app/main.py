@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
+from collections import Counter
 
 from app.config.loader import load_app_config
 from app.config.models import AppConfig, RiskConfig, SymbolConfig
@@ -28,12 +29,12 @@ from app.market.market_state_builder import MarketStateBuilder
 from app.market.models import MarketState, OrderBookLevel, OrderBookSnapshot, TradeTick
 from app.market.regime_classifier import RegimeClassifier
 from app.market.tf_selector import TfProfileSelector
-from app.risk.models import PositionState, RiskLimits
+from app.risk.models import PositionState, RiskDecision, RiskLimits
 from app.risk.risk_engine import RiskEngine
 from app.rotation.models import RotationState
 from app.rotation.rotation_engine import RotationEngine
 from app.runtime.state import RuntimeState, RuntimeStateStore
-from app.strategies.base import BaseStrategy
+from app.strategies.base import BaseStrategy, Signal
 from app.strategies.registry import build_active_strategies
 from app.telemetry import configure_logging
 from app.telemetry.events import TelemetryEvent
@@ -214,6 +215,8 @@ def main() -> None:
     execution_engine = ExecutionEngine(
         gateway=gateway,
         limits=risk_limits,
+        mode=config.trading.bybit.mode.value,
+        logger=logger.getChild("execution"),
         trailing_callback=risk_engine.apply_trailing_stop,
         pnl_callback=handle_realized_pnl,
     )
@@ -256,14 +259,29 @@ def main() -> None:
     try:
         while not stop_event:
             loop_start = time.perf_counter()
+            execution_engine.reset_cycle_counters()
             runtime_state = runtime_store.load_state()
             _sync_limits(runtime_state, risk_limits)
+            signals: list[Signal] = []
+            decisions: list[RiskDecision] = []
             try:
                 market_states = market_service.refresh()
             except Exception as exc:  # pragma: no cover - defensive
                 logger.exception("Market refresh failed", exc_info=exc)
                 market_states = {}
             if not market_states:
+                logger.info(
+                    "Tick summary",
+                    extra={
+                        "mode": config.trading.bybit.mode.value,
+                        "n_markets": 0,
+                        "n_signals_total": 0,
+                        "n_signals_by_strategy": {},
+                        "n_approved_decisions": 0,
+                        "n_rejected_decisions": 0,
+                        "n_orders_sent": 0,
+                    },
+                )
                 time.sleep(update_interval)
                 continue
             try:
@@ -295,6 +313,21 @@ def main() -> None:
                     cooldown_alerted = False
             else:
                 logger.debug("bot_running is false – skipping new entries")
+            n_signals_by_strategy = {
+                sid.value: count for sid, count in Counter(signal.strategy_id for signal in signals).items()
+            }
+            logger.info(
+                "Tick summary",
+                extra={
+                    "mode": config.trading.bybit.mode.value,
+                    "n_markets": len(market_states),
+                    "n_signals_total": len(signals),
+                    "n_signals_by_strategy": n_signals_by_strategy,
+                    "n_approved_decisions": sum(1 for d in decisions if d.approved),
+                    "n_rejected_decisions": sum(1 for d in decisions if not d.approved),
+                    "n_orders_sent": execution_engine.cycle_orders_sent,
+                },
+            )
             loop_duration = time.perf_counter() - loop_start
             sleep_for = max(0.0, update_interval - loop_duration)
             time.sleep(sleep_for)

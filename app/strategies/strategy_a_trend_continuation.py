@@ -116,4 +116,12 @@ class StrategyATrendContinuation(BaseStrategy):
                 continue
             if self._market_allows_short(state):
                 signals.append(self._build_signal(symbol, Side.SHORT, state))
+        self.logger.debug(
+            "Strategy generated signals",
+            extra={
+                "strategy_id": self.id.value,
+                "n_signals": len(signals),
+                "symbols": sorted({str(s.symbol) for s in signals}),
+            },
+        )
         return signals

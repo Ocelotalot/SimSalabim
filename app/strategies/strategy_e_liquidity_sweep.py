@@ -100,4 +100,12 @@ class StrategyELiquiditySweep(BaseStrategy):
             if price <= low and pos_side != Side.LONG:
                 sl_price = low - self.sl_buffer_ticks * self.tick_size
                 signals.append(self._build_signal(symbol, Side.LONG, state, sl_price))
+        self.logger.debug(
+            "Strategy generated signals",
+            extra={
+                "strategy_id": self.id.value,
+                "n_signals": len(signals),
+                "symbols": sorted({str(s.symbol) for s in signals}),
+            },
+        )
         return signals

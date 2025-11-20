@@ -101,4 +101,12 @@ class StrategyDVwapMeanReversion(BaseStrategy):
             if price >= upper_band and pos_side != Side.SHORT:
                 sl_price = upper_band + 0.5 * atr
                 signals.append(self._build_signal(symbol, Side.SHORT, state, sl_price))
+        self.logger.debug(
+            "Strategy generated signals",
+            extra={
+                "strategy_id": self.id.value,
+                "n_signals": len(signals),
+                "symbols": sorted({str(s.symbol) for s in signals}),
+            },
+        )
         return signals
