@@ -41,6 +41,7 @@ from app.telemetry.events import TelemetryEvent
 from app.telemetry.storage import TelemetryStorage, default_storage
 
 logger_signals = logging.getLogger("bybit_bot.signal_flow")
+logger_strategies = logging.getLogger("bybit_bot.strategies")
 
 FETCH_TIMEFRAMES: tuple[Timeframe, ...] = (
     Timeframe.MIN_1,
@@ -448,6 +449,14 @@ def _collect_signals(
     raw_counts: Counter[str] = Counter()
     filtered_counts: Counter[str] = Counter()
     strategy_ids = [s.id.value for s in strategies]
+    logger_strategies.info(
+        "Collecting signals",
+        extra={
+            "n_strategies": len(strategy_ids),
+            "strategy_ids": strategy_ids,
+            "n_markets": len(market_states),
+        },
+    )
     logger_signals.debug(
         "Collecting signals from strategies",
         extra={
@@ -460,6 +469,13 @@ def _collect_signals(
 
     for strategy in strategies:
         raw = strategy.generate_signals(market_states, positions)
+        logger_strategies.info(
+            "Strategy returned signals",
+            extra={
+                "strategy_id": strategy.id.value,
+                "n_signals": len(raw),
+            },
+        )
         raw_counts[strategy.id.value] += len(raw)
         for signal in raw:
             mkt = market_states.get(signal.symbol)
