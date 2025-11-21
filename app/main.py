@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
-from collections import Counter
 
 from app.config.loader import load_app_config
 from app.config.models import AppConfig, RiskConfig, SymbolConfig
@@ -40,8 +39,6 @@ from app.telemetry import configure_logging
 from app.telemetry.events import TelemetryEvent
 from app.telemetry.storage import TelemetryStorage, default_storage
 
-logger_signals = logging.getLogger("bybit_bot.signal_flow")
-logger_strategies = logging.getLogger("bybit_bot.strategies")
 
 FETCH_TIMEFRAMES: tuple[Timeframe, ...] = (
     Timeframe.MIN_1,
@@ -450,6 +447,16 @@ def _convert_trades(trades: Iterable[FeedTrade]) -> list[TradeTick]:
     return ticks
 
 
+logger_strategies = logging.getLogger("bybit_bot.strategies")
+
+try:
+    DEBUG_STRATEGY_IDS: set[StrategyId] = {
+        StrategyId.STRATEGY_DEBUG_ALWAYS_LONG
+    }
+except AttributeError:
+    DEBUG_STRATEGY_IDS = set()
+
+
 def _collect_signals(
     strategies: Iterable[BaseStrategy],
     market_states: Mapping[Symbol, MarketState],
@@ -457,65 +464,63 @@ def _collect_signals(
     filters: PreTradeFilters,
     rotation_state: RotationState | None,
 ) -> list[Signal]:
+    """
+    Собирает сигналы со стратегий и применяет:
+    - whitelist по ротации,
+    - pre-trade фильтры.
+    Debug-стратегия пропускается без гейтинга для отладки.
+    """
     allowed = set(rotation_state.active_symbols) if rotation_state else None
-    all_signals: list[Signal] = []
-    raw_counts: Counter[str] = Counter()
-    filtered_counts: Counter[str] = Counter()
-    strategy_ids = [s.id.value for s in strategies]
-    logger_strategies.info(
-        "Collecting signals",
-        extra={
-            "n_strategies": len(strategy_ids),
-            "strategy_ids": strategy_ids,
-            "n_markets": len(market_states),
-        },
-    )
-    logger_signals.debug(
-        "Collecting signals from strategies",
-        extra={
-            "n_strategies": len(strategy_ids),
-            "strategy_ids": strategy_ids,
-            "n_markets": len(market_states),
-            "rotation_whitelist": sorted(allowed) if allowed else None,
-        },
-    )
+    collected: list[Signal] = []
 
     for strategy in strategies:
-        raw = strategy.generate_signals(market_states, positions)
-        logger_strategies.info(
-            "Strategy returned signals",
-            extra={
-                "strategy_id": strategy.id.value,
-                "n_signals": len(raw),
-            },
-        )
-        raw_counts[strategy.id.value] += len(raw)
-        for signal in raw:
+        raw_signals = strategy.generate_signals(market_states, positions)
+        for signal in raw_signals:
             mkt = market_states.get(signal.symbol)
             if not mkt:
                 continue
-            if allowed and str(signal.symbol) not in allowed:
-                continue
-            style = STRATEGY_STYLE_MAP.get(signal.strategy_id, TradeStyle.TREND)
-            ok, _ = filters.validate(mkt, trade_style=style)
-            if not ok:
-                continue
-            filtered_counts[strategy.id.value] += 1
-            all_signals.append(signal)
 
-    logger_signals.debug(
-        "Collected signals summary",
-        extra={
-            "n_strategies": len(strategy_ids),
-            "strategy_ids": strategy_ids,
-            "n_signals_raw": sum(raw_counts.values()),
-            "signals_raw_by_strategy": dict(raw_counts),
-            "n_signals_after_filters": len(all_signals),
-            "signals_after_filters_by_strategy": dict(filtered_counts),
-            "rotation_whitelist": sorted(allowed) if allowed else None,
-        },
-    )
-    return all_signals
+            # 1) Debug-стратегия: пропускаем ротацию и фильтры целиком
+            if DEBUG_STRATEGY_IDS and signal.strategy_id in DEBUG_STRATEGY_IDS:
+                logger_strategies.info(
+                    "Debug signal accepted without filters",
+                    extra={
+                        "strategy_id": getattr(signal.strategy_id, "value", str(signal.strategy_id)),
+                        "symbol": str(signal.symbol),
+                    },
+                )
+                collected.append(signal)
+                continue
+
+            # 2) Гейтинг по ротации для обычных стратегий
+            if allowed and str(signal.symbol) not in allowed:
+                logger_strategies.info(
+                    "Signal rejected by rotation whitelist",
+                    extra={
+                        "strategy_id": getattr(signal.strategy_id, "value", str(signal.strategy_id)),
+                        "symbol": str(signal.symbol),
+                        "allowed_symbols": list(allowed),
+                    },
+                )
+                continue
+
+            # 3) Pre-trade фильтры
+            style = STRATEGY_STYLE_MAP.get(signal.strategy_id, TradeStyle.TREND)
+            ok, reasons = filters.validate(mkt, trade_style=style)
+            if not ok:
+                logger_strategies.info(
+                    "Signal rejected by pre-trade filters",
+                    extra={
+                        "strategy_id": getattr(signal.strategy_id, "value", str(signal.strategy_id)),
+                        "symbol": str(signal.symbol),
+                        "reasons": reasons,
+                    },
+                )
+                continue
+
+            collected.append(signal)
+
+    return collected
 
 
 def _dispatch_reports(
